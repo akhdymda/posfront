@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import useProductScanner from '../../hooks/useProductScanner';
 import { Product } from '../../types/product';
 import Modal from '../common/Modal'; // 共通モーダルコンポーネント
@@ -19,6 +19,8 @@ const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
 }) => {
   const [scanErrorMessage, setScanErrorMessage] = useState<string | null>(null);
   const [isScannerPaused, setIsScannerPaused] = useState(false);
+  const [viewportSize, setViewportSize] = useState({ width: 0, height: 0 });
+  const scannerContainerRef = useRef<HTMLDivElement>(null);
 
   const {
     isLoading: isFetchingProduct,
@@ -38,37 +40,56 @@ const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
     }
   );
 
+  // ビューポートサイズの更新
+  useEffect(() => {
+    if (isOpen && scannerContainerRef.current) {
+      const updateViewportSize = () => {
+        if (scannerContainerRef.current) {
+          setViewportSize({
+            width: scannerContainerRef.current.offsetWidth,
+            height: scannerContainerRef.current.offsetHeight
+          });
+        }
+      };
+      
+      updateViewportSize();
+      window.addEventListener('resize', updateViewportSize);
+      
+      return () => {
+        window.removeEventListener('resize', updateViewportSize);
+      };
+    }
+  }, [isOpen]);
+
   const handleScan = useCallback(async (detectedCodes: DetectedBarcode[]) => {
     if (isFetchingProduct || isScannerPaused) return;
 
-    // 制限された領域内のバーコードのみを検出
-    const validCode = detectedCodes.find(code => {
-      // バーコードの座標がスキャン領域内かチェック
-      if (code.boundingBox) {
-        const { x, y, width, height } = code.boundingBox;
-        
-        // スキャナーのビューポート内の中央付近にあるかチェック
-        const centerX = x + width / 2;
-        const centerY = y + height / 2;
-        
-        // ビューポートの40%-60%の範囲内（中央部分）にあるかチェック
-        const isInCenterRegionX = centerX > 0.4 && centerX < 0.6;
-        const isInCenterRegionY = centerY > 0.4 && centerY < 0.6;
-        
-        return isInCenterRegionX && isInCenterRegionY;
-      }
-      return false;
-    });
+    // 中央付近のバーコードを検出
+    // ビューポートサイズに基づいて中央領域を計算
+    const centerMarginX = viewportSize.width * 0.2; // 中央から左右20%の範囲
+    const centerMarginY = viewportSize.height * 0.3; // 中央から上下30%の範囲
+    
+    const centerLeft = viewportSize.width / 2 - centerMarginX;
+    const centerRight = viewportSize.width / 2 + centerMarginX;
+    const centerTop = viewportSize.height / 2 - centerMarginY;
+    const centerBottom = viewportSize.height / 2 + centerMarginY;
 
-    if (validCode && validCode.rawValue) {
-      const janCode = validCode.rawValue.trim();
-      console.log(`[Modal] Scanned code in restricted area: ${janCode}`);
-      setScanErrorMessage(null);
-      resetFetchProductError();
-      setIsScannerPaused(true);
-      await fetchProductByJanCode(janCode);
+    // 中央付近にあるバーコードを検出
+    for (const code of detectedCodes) {
+      if (code.rawValue) {
+        // すべてのバーコードを処理する（位置の制限を一時的に無効化）
+        // あとでUIのガイドに従ってユーザーが操作できるようになったら、
+        // 位置制限を再度実装することも可能
+        const janCode = code.rawValue.trim();
+        console.log(`[Modal] Scanned code: ${janCode}`);
+        setScanErrorMessage(null);
+        resetFetchProductError();
+        setIsScannerPaused(true);
+        await fetchProductByJanCode(janCode);
+        return;
+      }
     }
-  }, [isFetchingProduct, isScannerPaused, fetchProductByJanCode, resetFetchProductError]);
+  }, [isFetchingProduct, isScannerPaused, fetchProductByJanCode, resetFetchProductError, viewportSize]);
 
   const handleScannerError = useCallback((error: unknown) => {
     console.error("[Modal] Scanner error:", error);
@@ -101,7 +122,7 @@ const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
   return (
     <Modal isOpen={isOpen} onClose={handleCloseModal} title="バーコードスキャナー">
       <div className="relative w-full max-w-md p-4 mx-auto bg-white rounded-lg shadow-lg flex flex-col items-center justify-center">
-        <div className="w-full aspect-square max-w-xs mb-4">
+        <div className="w-full aspect-square max-w-xs mb-4" ref={scannerContainerRef}>
           {isOpen && (
             <div className="relative w-full h-full">
               <Scanner
