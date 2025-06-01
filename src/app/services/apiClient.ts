@@ -1,9 +1,12 @@
 import axios from 'axios';
 
+// 環境判定
+const isProduction = typeof window !== 'undefined' && window.location.hostname.includes('azurewebsites.net');
+
 // APIのベースURLを取得し、末尾のスラッシュを正規化する関数
 const getBaseUrl = () => {
   // 本番環境（Azure）では正しいバックエンドURLを直接指定
-  if (typeof window !== 'undefined' && window.location.hostname.includes('azurewebsites.net')) {
+  if (isProduction) {
     // フロントエンドは app-step4-27.azurewebsites.net、バックエンドは app-step4-28.azurewebsites.net
     return 'https://app-step4-28.azurewebsites.net/api';
   }
@@ -37,6 +40,14 @@ const normalizePath = (path: string) => {
   return `/${path}`;
 };
 
+// セキュアなログ出力関数
+const secureLog = (message: string) => {
+  // 本番環境ではログを出力しない
+  if (!isProduction) {
+    console.log(message);
+  }
+};
+
 // リクエスト前の共通処理
 apiClient.interceptors.request.use(config => {
   // URLパスの正規化
@@ -44,8 +55,8 @@ apiClient.interceptors.request.use(config => {
     config.url = normalizePath(config.url);
   }
   
-  // デバッグ用ログ
-  console.log(`[API] Request to: ${config.baseURL}${config.url}`);
+  // 開発環境でのみデバッグログを出力
+  secureLog(`[API] Request to: ${config.baseURL}${config.url}`);
   return config;
 });
 
