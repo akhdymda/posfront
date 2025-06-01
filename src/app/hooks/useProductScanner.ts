@@ -38,7 +38,7 @@ const useProductScanner = (
     setIsLoading(true);
     setError(null);
     try {
-      const response = await apiClient.get<{ code: string; name: string; price: number }>(`products/${janCode}`);
+      const response = await apiClient.get<{ code: string; name: string; price: number }>(`api/products/${janCode}`);
       console.log("[ScannerHook] API fetch successful, response data:", JSON.stringify(response.data, null, 2));
       if (response.data) {
         const productData: Product = {
