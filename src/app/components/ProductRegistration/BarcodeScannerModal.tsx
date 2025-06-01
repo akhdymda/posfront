@@ -19,7 +19,6 @@ const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
 }) => {
   const [scanErrorMessage, setScanErrorMessage] = useState<string | null>(null);
   const [isScannerPaused, setIsScannerPaused] = useState(false);
-  const [viewportSize, setViewportSize] = useState({ width: 0, height: 0 });
   const scannerContainerRef = useRef<HTMLDivElement>(null);
 
   const {
@@ -39,27 +38,6 @@ const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
       setIsScannerPaused(false);
     }
   );
-
-  // ビューポートサイズの更新
-  useEffect(() => {
-    if (isOpen && scannerContainerRef.current) {
-      const updateViewportSize = () => {
-        if (scannerContainerRef.current) {
-          setViewportSize({
-            width: scannerContainerRef.current.offsetWidth,
-            height: scannerContainerRef.current.offsetHeight
-          });
-        }
-      };
-      
-      updateViewportSize();
-      window.addEventListener('resize', updateViewportSize);
-      
-      return () => {
-        window.removeEventListener('resize', updateViewportSize);
-      };
-    }
-  }, [isOpen]);
 
   const handleScan = useCallback(async (detectedCodes: DetectedBarcode[]) => {
     if (isFetchingProduct || isScannerPaused) return;
