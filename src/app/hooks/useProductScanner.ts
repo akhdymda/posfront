@@ -13,6 +13,13 @@ interface UseProductScannerResult { // フックの戻り値の型をシンプ�
   resetError: () => void;
 }
 
+// テストDBからの商品情報の型定義
+interface TestDbProduct {
+  code: string;
+  name: string;
+  price: number;
+}
+
 const useProductScanner = (
   // videoRef, isModalOpen は不要になるため削除
   onScanSuccessCallback: (product: Product) => void,
@@ -34,13 +41,13 @@ const useProductScanner = (
         success: boolean;
         message: string;
         products_found: number;
-        products: any[];
+        products: TestDbProduct[];
       }>('/test-db');
       console.log("[ScannerHook] データベース接続テスト結果:", response.data);
       return response.data;
     } catch (err) {
       console.error("[ScannerHook] データベース接続テストエラー:", err);
-      return { success: false, message: "接続テストに失敗しました", products_found: 0, products: [] };
+      return { success: false, message: "接続テストに失敗しました", products_found: 0, products: [] as TestDbProduct[] };
     }
   }, []);
 
