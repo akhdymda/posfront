@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useCallback } from 'react';
 // Quagga のインポートを削除
 // import Quagga, { QuaggaJSResultObject as QuaggaResult } from '@ericblade/quagga2';
 import apiClient from '../services/apiClient';
