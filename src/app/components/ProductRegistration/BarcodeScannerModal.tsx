@@ -65,21 +65,13 @@ const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
     if (isFetchingProduct || isScannerPaused) return;
 
     // 中央付近のバーコードを検出
-    // ビューポートサイズに基づいて中央領域を計算
-    const centerMarginX = viewportSize.width * 0.2; // 中央から左右20%の範囲
-    const centerMarginY = viewportSize.height * 0.3; // 中央から上下30%の範囲
+    // 注：現在は位置の制限を無効化していますが、
+    // UIのガイド枠によってユーザーは自然と中央にバーコードを合わせるようになります
     
-    const centerLeft = viewportSize.width / 2 - centerMarginX;
-    const centerRight = viewportSize.width / 2 + centerMarginX;
-    const centerTop = viewportSize.height / 2 - centerMarginY;
-    const centerBottom = viewportSize.height / 2 + centerMarginY;
-
     // 中央付近にあるバーコードを検出
     for (const code of detectedCodes) {
       if (code.rawValue) {
         // すべてのバーコードを処理する（位置の制限を一時的に無効化）
-        // あとでUIのガイドに従ってユーザーが操作できるようになったら、
-        // 位置制限を再度実装することも可能
         const janCode = code.rawValue.trim();
         console.log(`[Modal] Scanned code: ${janCode}`);
         setScanErrorMessage(null);
@@ -89,7 +81,7 @@ const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
         return;
       }
     }
-  }, [isFetchingProduct, isScannerPaused, fetchProductByJanCode, resetFetchProductError, viewportSize]);
+  }, [isFetchingProduct, isScannerPaused, fetchProductByJanCode, resetFetchProductError]);
 
   const handleScannerError = useCallback((error: unknown) => {
     console.error("[Modal] Scanner error:", error);
