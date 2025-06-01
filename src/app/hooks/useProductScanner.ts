@@ -146,7 +146,7 @@ const useProductScanner = (
         }
         
         if (axiosError.response && axiosError.response.status === 404) {
-          errorMessage = `商品コード: ${janCode} の情報は見つかりませんでした。`;
+          errorMessage = `商品コード: ${janCode} は登録されていません。`;
           
           // 開発環境でのみデータベース接続テストを実行
           if (!isProduction) {

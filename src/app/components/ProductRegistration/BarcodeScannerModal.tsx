@@ -17,7 +17,8 @@ const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
   onScanSuccess,
   onScanError,
 }) => {
-  const [scanErrorMessage, setScanErrorMessage] = useState<string | null>(null);
+  // エラーメッセージを一元管理するため、一つのステートに統合
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isScannerPaused, setIsScannerPaused] = useState(false);
   const scannerContainerRef = useRef<HTMLDivElement>(null);
 
@@ -33,8 +34,9 @@ const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
       onClose();
     },
     (errMsg) => {
-      setScanErrorMessage(`商品情報取得エラー: ${errMsg}`);
-      onScanError(`商品情報取得エラー: ${errMsg}`);
+      // エラーメッセージを設定し、親コンポーネントにも通知（二重表示はしない）
+      setErrorMessage(errMsg);
+      onScanError(errMsg);
       setIsScannerPaused(false);
     }
   );
@@ -52,7 +54,7 @@ const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
         // すべてのバーコードを処理する（位置の制限を一時的に無効化）
         const janCode = code.rawValue.trim();
         console.log(`[Modal] Scanned code: ${janCode}`);
-        setScanErrorMessage(null);
+        setErrorMessage(null);
         resetFetchProductError();
         setIsScannerPaused(true);
         await fetchProductByJanCode(janCode);
@@ -69,20 +71,28 @@ const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
     } else if (typeof error === 'string') {
       message = error;
     }
-    setScanErrorMessage(message);
+    // エラーメッセージを設定
+    setErrorMessage(message);
     onScanError(message);
     setIsScannerPaused(false);
   }, [onScanError]);
 
   useEffect(() => {
     if (isOpen) {
-      setScanErrorMessage(null);
+      setErrorMessage(null);
       resetFetchProductError();
       setIsScannerPaused(false);
     } else {
       setIsScannerPaused(true);
     }
   }, [isOpen, resetFetchProductError]);
+
+  // fetchProductErrorが変更されたらerrorMessageも更新
+  useEffect(() => {
+    if (fetchProductError) {
+      setErrorMessage(fetchProductError);
+    }
+  }, [fetchProductError]);
 
   const handleCloseModal = () => {
     setIsScannerPaused(true);
@@ -129,10 +139,11 @@ const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
         </div>
 
         {isFetchingProduct && <p className="mt-2 text-sm text-blue-600">商品情報を検索中...</p>}
-        {scanErrorMessage && <p className="mt-2 text-sm text-red-500">スキャンエラー: {scanErrorMessage}</p>}
-        {fetchProductError && <p className="mt-2 text-sm text-red-500">エラー: {fetchProductError}</p>}
         
-        {!isFetchingProduct && !scanErrorMessage && !fetchProductError && isOpen && !isScannerPaused && (
+        {/* エラーメッセージを統合して表示 */}
+        {errorMessage && <p className="mt-2 text-sm text-red-500">エラー: {errorMessage}</p>}
+        
+        {!isFetchingProduct && !errorMessage && isOpen && !isScannerPaused && (
            <p className="mt-2 text-sm text-gray-600">カメラでバーコードをスキャンしてください...</p>
         )}
 

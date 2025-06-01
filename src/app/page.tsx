@@ -39,6 +39,10 @@ export default function HomePage() {
 
   const handleCloseScanner = () => {
     setIsScannerModalOpen(false);
+    // モーダル内でエラーが発生していた場合は、そのエラーをメインページに引き継ぐ
+    if (scanError === null && scannedProduct === null) {
+      // エラーもないし商品もない場合は、何もしない
+    }
   };
 
   const handleScanSuccess = (product: Product) => {
@@ -49,10 +53,15 @@ export default function HomePage() {
   };
 
   const handleScanError = (message: string) => {
-    setScanError(message);
+    // モーダルが閉じられた時のみ、メインページにエラーを表示
+    if (!isScannerModalOpen) {
+      setScanError(message);
+    } else {
+      // モーダルが開いている場合は、モーダル内でエラーが表示されるので
+      // ここではエラーメッセージを設定しない
+      setScanError(null);
+    }
     setScannedProduct(null);
-    // エラーメッセージはBarcodeScannerModal内で表示、必要ならpage.tsxでも表示可能
-    // setIsScannerModalOpen(false); // エラー時はモーダルを開いたままにするか閉じるかは要件次第
   };
 
   const handleAddToCart = (product: Product) => {
@@ -88,7 +97,10 @@ export default function HomePage() {
           <h2 className="text-xl font-semibold text-gray-700 mb-4">商品登録</h2>
           <div className="space-y-4">
             <ScanButton onClick={handleOpenScanner} disabled={isScannerModalOpen || isCheckoutLoading} />
-            {scanError && <p className="text-red-500 text-sm text-center">スキャンエラー: {scanError}</p>}
+            {/* スキャナーモーダルが閉じられた後にのみエラーを表示 */}
+            {!isScannerModalOpen && scanError && (
+              <p className="text-red-500 text-sm text-center">エラー: {scanError}</p>
+            )}
             <ProductInfoForm product={scannedProduct} onAddToCart={handleAddToCart} />
           </div>
         </section>
