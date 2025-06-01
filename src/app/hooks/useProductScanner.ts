@@ -7,8 +7,11 @@ import { Product } from '../types/product';
 // 環境判定
 const isProduction = typeof window !== 'undefined' && window.location.hostname.includes('azurewebsites.net');
 
+// ログデータの型定義
+type LogData = string | number | boolean | object | null | undefined;
+
 // セキュアなログ出力関数
-const secureLog = (message: string, data?: any) => {
+const secureLog = (message: string, data?: LogData) => {
   // 本番環境ではログを出力しない
   if (!isProduction) {
     if (data) {
@@ -19,8 +22,11 @@ const secureLog = (message: string, data?: any) => {
   }
 };
 
+// エラーオブジェクトの型定義
+type ErrorType = Error | unknown;
+
 // セキュアなエラーログ出力関数
-const secureErrorLog = (message: string, error?: any) => {
+const secureErrorLog = (message: string, error?: ErrorType) => {
   // 本番環境では詳細なエラー情報を出力しない
   if (isProduction) {
     console.error(message);
