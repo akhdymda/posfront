@@ -24,8 +24,24 @@ const apiClient = axios.create({
   },
 });
 
+// パスの正規化を行う関数
+const normalizePath = (path: string) => {
+  // パスが既に/で始まっている場合はそのまま返す
+  if (path.startsWith('/')) {
+    return path;
+  }
+  // そうでなければ/を追加する
+  return `/${path}`;
+};
+
 // リクエスト前の共通処理
 apiClient.interceptors.request.use(config => {
+  // URLパスの正規化
+  if (config.url) {
+    config.url = normalizePath(config.url);
+  }
+  
+  // デバッグ用ログ
   console.log(`[API] Request to: ${config.baseURL}${config.url}`);
   return config;
 });
