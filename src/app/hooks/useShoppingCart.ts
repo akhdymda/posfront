@@ -3,13 +3,19 @@ import { CartItem, Cart } from '../types/cart';
 import { Product } from '../types/product';
 import apiClient from '../services/apiClient';
 
+interface CheckoutSuccessData {
+  totalAmountWithTax: number;
+  totalAmountWithoutTax: number;
+  trdId: number;
+}
+
 interface UseShoppingCart {
   cart: Cart;
   addItemToCart: (product: Product) => void;
   // removeItemFromCart: (productId: string) => void; // 必要であれば削除機能
   // updateItemQuantity: (productId: string, quantity: number) => void; // 必要であれば数量更新機能
   clearCart: () => void;
-  checkout: () => Promise<{ success: boolean; data?: any; error?: string }>; // 購入処理
+  checkout: () => Promise<{ success: boolean; data?: CheckoutSuccessData; error?: string }>; // anyをCheckoutSuccessDataに
   isLoading: boolean;
 }
 
@@ -53,7 +59,7 @@ const useShoppingCart = (): UseShoppingCart => {
     setCartItems([]);
   };
 
-  const checkout = async (): Promise<{ success: boolean; data?: any; error?: string }> => {
+  const checkout = async (): Promise<{ success: boolean; data?: CheckoutSuccessData; error?: string }> => {
     setIsLoading(true);
     try {
       const requestBody = {
@@ -89,13 +95,16 @@ const useShoppingCart = (): UseShoppingCart => {
         console.error('Checkout failed:', response.data);
         return { success: false, error: errorMessage };
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Checkout API error:', error);
       setIsLoading(false);
       let errorMessage = '購入処理中にエラーが発生しました。';
-      if (error.response && error.response.data && error.response.data.detail) {
-        errorMessage = error.response.data.detail;
-      } else if (error.message) {
+      if (typeof error === 'object' && error !== null && 'response' in error) {
+        const axiosError = error as { response?: { data?: { detail?: string } } };
+        if (axiosError.response?.data?.detail) {
+          errorMessage = axiosError.response.data.detail;
+        }
+      } else if (error instanceof Error) {
         errorMessage = error.message;
       }
       return { success: false, error: errorMessage };

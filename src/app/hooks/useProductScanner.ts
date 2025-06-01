@@ -1,10 +1,48 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-// @ts-ignore
 import Quagga from '@ericblade/quagga2';
 import apiClient from '../services/apiClient';
 import { Product } from '../types/product';
 
-// 手動で定義した型を削除し、Quaggaの型を極力推論させるか、anyで対応
+// Quaggaの型定義 (部分的な定義、必要に応じて拡張)
+interface QuaggaJSResultObject {
+  codeResult: {
+    code: string | null;
+    [key: string]: any; // 他にもプロパティが存在する可能性があるため
+  };
+  box?: number[][];
+  boxes?: number[][][];
+  [key: string]: any; // 他のプロパティ
+}
+
+interface QuaggaJSConfig {
+  inputStream: {
+    name: string;
+    type: 'LiveStream';
+    target: HTMLVideoElement | string | undefined;
+    constraints: {
+      width: number;
+      height: number;
+      facingMode: string;
+    };
+    singleChannel: boolean;
+    willReadFrequently: boolean;
+  };
+  locator: {
+    patchSize: string;
+    halfSample: boolean;
+  };
+  numOfWorkers: number;
+  decoder: {
+    readers: (string | { format: string, config: Record<string, any> })[];
+  };
+  locate: boolean;
+  frequency: number;
+}
+
+interface QuaggaError {
+  message?: string;
+  // 他のエラー関連プロパティ
+}
 
 interface UseProductScannerProps {
   onScanSuccess: (product: Product) => void;
@@ -36,8 +74,9 @@ const useProductScanner = (
 
   // Ref-based callbacks to avoid circular dependencies and stale closures
   const fetchProductInfoRef = useRef<((janCode: string) => Promise<void>) | null>(null);
-  const handleDetectedCallbackRef = useRef<((data: any) => void) | null>(null);
-  const handleProcessedCallbackRef = useRef<((result: any) => void) | null>(null);
+  // QuaggaJSResultObject を使用
+  const handleDetectedCallbackRef = useRef<((data: QuaggaJSResultObject) => void) | null>(null);
+  const handleProcessedCallbackRef = useRef<((result: QuaggaJSResultObject) => void) | null>(null);
   const initializeQuaggaRef = useRef<(() => void) | null>(null);
   const internalStopScanRef = useRef<(() => void) | null>(null);
 
@@ -65,7 +104,8 @@ const useProductScanner = (
       return;
     }
     try {
-      const response = await apiClient.get<any>(`api/products/${janCode}`);
+      // APIクライアントのレスポンス型をProductに指定 (もしくは適切なAPIレスポンス型)
+      const response = await apiClient.get<{ code: string; name: string; price: number }>(`api/products/${janCode}`);
       console.log("[ScannerHook] API fetch successful, response data:", JSON.stringify(response.data, null, 2));
       lastDetectedCodeRef.current = null; 
       if (response.data) {
@@ -87,11 +127,20 @@ const useProductScanner = (
         }
         setIsScanning(false);
       }
-    } catch (err: any) {
+    } catch (err: unknown) { // より安全な `unknown` 型を使用し、型ガードを行う
       console.error('[ScannerHook] API fetch error object:', err);
-      const errorMessage = err.response && err.response.status === 404
-        ? `商品コード: ${janCode} の情報は見つかりませんでした。`
-        : '商品情報の取得に失敗しました。';
+      let errorMessage = '商品情報の取得に失敗しました。';
+      if (typeof err === 'object' && err !== null && 'response' in err) {
+        const axiosError = err as { response?: { status?: number; data?: { detail?: string } } }; // Axiosのエラー型を想定
+        if (axiosError.response && axiosError.response.status === 404) {
+          errorMessage = `商品コード: ${janCode} の情報は見つかりませんでした。`;
+        } else if (axiosError.response?.data?.detail) {
+            errorMessage = axiosError.response.data.detail;
+        }
+      } else if (err instanceof Error) {
+        errorMessage = err.message;
+      }
+
       onScanErrorCallback(errorMessage);
       setError(errorMessage);
       if (isQuaggaInitializedRef.current && Quagga && typeof Quagga.stop === 'function') {
@@ -108,7 +157,8 @@ const useProductScanner = (
     fetchProductInfoRef.current = internalFetchProductInfo;
   }, [internalFetchProductInfo]);
 
-  const internalHandleDetected = useCallback((data: any) => {
+  // QuaggaJSResultObject を使用
+  const internalHandleDetected = useCallback((data: QuaggaJSResultObject) => {
     if (!isQuaggaInitializedRef.current) {
         console.log(`[ScannerHook] handleDetected: Quagga not initialized. Ignoring.`);
         return;
@@ -127,19 +177,21 @@ const useProductScanner = (
     } else {
       console.warn("[ScannerHook] Quagga.onDetected called but no valid code string found in data:", data);
     }
-  }, [lastDetectedCodeRef]);
+  }, [lastDetectedCodeRef]); // fetchProductInfoRef は ref なので依存配列から削除可能
 
   useEffect(() => {
     handleDetectedCallbackRef.current = internalHandleDetected;
   }, [internalHandleDetected]);
 
-  const internalHandleProcessed = useCallback((result: any) => {
+  // QuaggaJSResultObject を使用
+  const internalHandleProcessed = useCallback((result: QuaggaJSResultObject) => {
     const drawingCtx = Quagga.canvas.ctx.overlay;
     const drawingCanvas = Quagga.canvas.dom.overlay;
     if (drawingCtx && drawingCanvas) {
         drawingCtx.clearRect(0, 0, parseInt(drawingCanvas.getAttribute("width") || "640"), parseInt(drawingCanvas.getAttribute("height") || "480"));
         if (result) {
             if (result.boxes) {
+                // box の型を QuaggaJSResultObject['box'] もしくは適切な型に
                 result.boxes.filter((box: any) => box !== result.box).forEach((box: any) => {
                     Quagga.ImageDebug.drawPath(box, { x: 0, y: 1 }, drawingCtx, { color: "green", lineWidth: 2 });
                 });
@@ -156,7 +208,16 @@ const useProductScanner = (
   }, [internalHandleProcessed]);
 
   const internalInitializeQuagga = useCallback(() => {
-    if (!videoRef.current) { return; }
+    if (!videoRef.current) {
+      console.warn("[ScannerHook] internalInitializeQuagga: videoRef.current is null. Aborting initialization.");
+      setError("ビデオ要素が見つかりません。");
+      onScanErrorCallback("ビデオ要素が見つかりません。");
+      setIsScanning(false);
+      return;
+    }
+    // videoRef.current が null でないことを保証
+    const currentVideoElement = videoRef.current;
+
     if (!streamRef.current || !streamRef.current.active) { setIsScanning(false); return; }
 
     const detectCb = handleDetectedCallbackRef.current;
@@ -171,18 +232,37 @@ const useProductScanner = (
         try {
             Quagga.start();
             console.log("[ScannerHook] Quagga.start() successful (re-start).");
-        } catch (startErr: any) {
+        } catch (startErrUnknown: unknown) { // unknown 型
+            const startErr = startErrUnknown as QuaggaError; // 型アサーション
             console.error("[ScannerHook] Quagga.start() failed (re-start):", startErr);
-            setError(`Quagga再開失敗: ${startErr.message || startErr}`);
-            onScanErrorCallback(`Quagga再開失敗: ${startErr.message || startErr}`);
+            setError(`Quagga再開失敗: ${startErr.message || String(startErr)}`);
+            onScanErrorCallback(`Quagga再開失敗: ${startErr.message || String(startErr)}`);
             setIsScanning(false); 
         }
         return; 
     }
     console.log("[ScannerHook] Initializing QuaggaJS for the first time...");
-    const quaggaConfig: any = { inputStream: { name: "Live", type: 'LiveStream', target: videoRef.current, constraints: { width: 640, height: 480, facingMode: "environment" }, singleChannel: false, willReadFrequently: true }, locator: { patchSize: "medium", halfSample: true }, numOfWorkers: typeof navigator.hardwareConcurrency === 'number' && navigator.hardwareConcurrency > 0 ? navigator.hardwareConcurrency : 0, decoder: { readers: ["ean_reader", "ean_8_reader"] }, locate: true, frequency: 10 };
-    Quagga.init(quaggaConfig, (err: any) => {
-      if (err) { console.error("[ScannerHook] Quagga.init failed:", err); setError(`Quagga初期化失敗: ${err.message || err}`); onScanErrorCallback(`Quagga初期化失敗: ${err.message || err}`); setIsScanning(false); isQuaggaInitializedRef.current = false; return; }
+    const quaggaConfig: QuaggaJSConfig = {
+        inputStream: {
+            name: "Live",
+            type: 'LiveStream',
+            target: currentVideoElement, // Use the non-null currentVideoElement
+            constraints: { width: 640, height: 480, facingMode: "environment" },
+            singleChannel: false,
+            willReadFrequently: true
+        },
+        locator: { patchSize: "medium", halfSample: true },
+        numOfWorkers: typeof navigator.hardwareConcurrency === 'number' && navigator.hardwareConcurrency > 0 ? navigator.hardwareConcurrency : 0,
+        decoder: {
+            readers: ["ean_reader", "ean_8_reader"]
+        },
+        locate: true,
+        frequency: 10
+    };
+    // @ts-expect-error Quaggaの型定義と完全に一致させるのが難しいため一時的にエラーを無視
+    Quagga.init(quaggaConfig, (errUnknown: unknown) => { // unknown 型
+      const err = errUnknown as QuaggaError; // 型アサーション
+      if (err) { console.error("[ScannerHook] Quagga.init failed:", err); setError(`Quagga初期化失敗: ${err.message || String(err)}`); onScanErrorCallback(`Quagga初期化失敗: ${err.message || String(err)}`); setIsScanning(false); isQuaggaInitializedRef.current = false; return; }
       console.log("[ScannerHook] Quagga.init successful.");
       isQuaggaInitializedRef.current = true;
       setIsScanning(true); 
@@ -191,10 +271,11 @@ const useProductScanner = (
       try {
         Quagga.start();
         console.log("[ScannerHook] Quagga.start() successful (after init).");
-      } catch (startErr: any) {
+      } catch (startErrUnknown: unknown) { // unknown 型
+        const startErr = startErrUnknown as QuaggaError; // 型アサーション
         console.error("[ScannerHook] Quagga.start() failed (after init):", startErr);
-        setError(`Quagga開始失敗: ${startErr.message || startErr}`);
-        onScanErrorCallback(`Quagga開始失敗: ${startErr.message || startErr}`);
+        setError(`Quagga開始失敗: ${startErr.message || String(startErr)}`);
+        onScanErrorCallback(`Quagga開始失敗: ${startErr.message || String(startErr)}`);
         setIsScanning(false);
         isQuaggaInitializedRef.current = false; 
         if (detectCb) Quagga.offDetected(detectCb); 
@@ -202,7 +283,7 @@ const useProductScanner = (
         if (Quagga && typeof Quagga.stop === 'function') Quagga.stop();
       }
     });
-  }, [videoRef, streamRef, onScanErrorCallback, setIsScanning, setError]);
+  }, [videoRef, streamRef, onScanErrorCallback, setIsScanning, setError]); // handleDetectedCallbackRef, handleProcessedCallbackRef は ref なので依存配列から削除可能
 
   useEffect(() => {
     initializeQuaggaRef.current = internalInitializeQuagga;
@@ -222,10 +303,11 @@ const useProductScanner = (
       streamRef.current = currentStream; 
       if (!videoRef.current) { setIsScanning(false); if (streamRef.current) { streamRef.current.getTracks().forEach(track => track.stop()); streamRef.current = null; } return; }
       videoRef.current.srcObject = streamRef.current;
-      videoRef.current.onloadedmetadata = async () => { if (videoRef.current && videoRef.current.paused) { try { await videoRef.current.play(); } catch (playErr: any) { console.error("[ScannerHookDirect] video.play() failed inside onloadedmetadata:", playErr); setError(`ビデオの再生に失敗: ${playErr.message}`); onScanErrorCallback(`ビデオの再生に失敗: ${playErr.message}`); setIsScanning(false);}} }; 
+      videoRef.current.onloadedmetadata = async () => { if (videoRef.current && videoRef.current.paused) { try { await videoRef.current.play(); } catch (playErrUnknown: unknown) { const playErr = playErrUnknown as Error; console.error("[ScannerHookDirect] video.play() failed inside onloadedmetadata:", playErr); setError(`ビデオの再生に失敗: ${playErr.message}`); onScanErrorCallback(`ビデオの再生に失敗: ${playErr.message}`); setIsScanning(false);}} }; 
       videoRef.current.onplaying = () => { if(initializeQuaggaRef.current) initializeQuaggaRef.current(); };
-      videoRef.current.onerror = (e) => { console.error("[ScannerHookDirect] Event: onerror on video element:", e); setError("ビデオ再生エラーが発生しました。"); onScanErrorCallback("ビデオ再生エラーが発生しました。"); setIsScanning(false); if (streamRef.current) { streamRef.current.getTracks().forEach(track => track.stop()); streamRef.current = null; } if (videoRef.current) videoRef.current.srcObject = null;  };
-    } catch (err: any) {
+      videoRef.current.onerror = (e: Event | string) => { console.error("[ScannerHookDirect] Event: onerror on video element:", e); setError("ビデオ再生エラーが発生しました。"); onScanErrorCallback("ビデオ再生エラーが発生しました。"); setIsScanning(false); if (streamRef.current) { streamRef.current.getTracks().forEach(track => track.stop()); streamRef.current = null; } if (videoRef.current) videoRef.current.srcObject = null;  };
+    } catch (errUnknown: unknown) { // unknown 型
+      const err = errUnknown as Error; // 型アサーション
       console.error("[ScannerHookDirect] Direct getUserMedia or video setup failed:", err);
       setError(`カメラの取得または再生に失敗: ${err.message}`);
       onScanErrorCallback(`カメラの取得または再生に失敗: ${err.message}`);
@@ -233,7 +315,7 @@ const useProductScanner = (
       if (streamRef.current) { streamRef.current.getTracks().forEach(track => track.stop()); streamRef.current = null; }
       if (videoRef.current) videoRef.current.srcObject = null;
     }
-  }, [videoRef, streamRef, onScanErrorCallback, setError, setIsScanning, lastDetectedCodeRef]);
+  }, [videoRef, streamRef, onScanErrorCallback, setError, setIsScanning, lastDetectedCodeRef, initializeQuaggaRef]); // initializeQuaggaRef を依存配列に追加
 
   const internalStopScan = useCallback(() => {
     if (!isQuaggaInitializedRef.current && !isScanningStateRef.current) {
@@ -253,7 +335,7 @@ const useProductScanner = (
     if (streamRef.current) { streamRef.current.getTracks().forEach(track => track.stop()); streamRef.current = null; }
     if (videoRef.current && videoRef.current.srcObject) { videoRef.current.srcObject = null; videoRef.current.onplaying = null; videoRef.current.onloadedmetadata = null; videoRef.current.onerror = null; }
     setIsScanning(false);
-  }, [videoRef, streamRef, setIsScanning, lastDetectedCodeRef]);
+  }, [videoRef, streamRef, setIsScanning, lastDetectedCodeRef]); // handleDetectedCallbackRef, handleProcessedCallbackRef は ref なので依存配列から削除可能
   
   useEffect(() => {
     internalStopScanRef.current = internalStopScan;
@@ -262,12 +344,12 @@ const useProductScanner = (
   // Exposed stopScan for external use (e.g. modal close button)
   const stopScan = useCallback(() => {
       if(internalStopScanRef.current) internalStopScanRef.current();
-  }, []);
+  }, []); // internalStopScanRef は ref なので依存配列から削除可能
 
   // Main useEffect for controlling scan based on modal state
   useEffect(() => {
     console.log(`[ScannerHook] Main useEffect triggered. isModalOpen: ${isModalOpen}, videoRef.current: ${!!videoRef.current}`);
-    const currentVideoRef = videoRef.current;
+    const currentVideoRef = videoRef.current; // useEffect 内で videoRef.current を参照するため、eslint react-hooks/exhaustive-deps 対策
     if (isModalOpen && currentVideoRef) {
       console.log("[ScannerHook] Main useEffect: Modal open and videoRef ready. Attempting to start scan.");
       internalStartScan();
@@ -275,11 +357,13 @@ const useProductScanner = (
       console.log("[ScannerHook] Main useEffect: Modal closed or videoRef not ready. Attempting to stop scan.");
       if (internalStopScanRef.current) internalStopScanRef.current();
     }
+    // クリーンアップ関数は internalStopScanRef.current に依存するため、それを依存配列に追加
+    const stopScanFunc = internalStopScanRef.current;
     return () => {
       console.log("[ScannerHook] Main useEffect cleanup: Ensuring scan is stopped.");
-      if (internalStopScanRef.current) internalStopScanRef.current();
+      if (stopScanFunc) stopScanFunc();
     };
-  }, [isModalOpen, videoRef, internalStartScan]);
+  }, [isModalOpen, videoRef, internalStartScan, internalStopScanRef]); // internalStopScanRef を依存配列に追加
 
   return {
     isScanning,

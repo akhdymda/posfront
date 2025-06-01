@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import ScanButton from './components/ProductRegistration/ScanButton';
 import ProductInfoForm from './components/ProductRegistration/ProductInfoForm';
 import BarcodeScannerModal from './components/ProductRegistration/BarcodeScannerModal';
@@ -10,6 +10,16 @@ import CheckoutModal from './components/CheckoutSection/CheckoutModal';
 import useShoppingCart from './hooks/useShoppingCart';
 import { Product } from './types/product';
 
+// useShoppingCartからcheckoutの戻り値の型を推論するか、明示的に定義
+interface CheckoutResultType {
+  success: boolean;
+  data?: { // useShoppingCartのCheckoutSuccessDataと同じ構造
+    totalAmountWithTax: number;
+    totalAmountWithoutTax: number;
+    trdId: number;
+  };
+  error?: string;
+}
 
 export default function HomePage() {
   const [isScannerModalOpen, setIsScannerModalOpen] = useState(false);
@@ -19,7 +29,7 @@ export default function HomePage() {
   const { cart, addItemToCart, clearCart, checkout, isLoading: isCheckoutLoading } = useShoppingCart();
 
   const [isCheckoutModalOpen, setIsCheckoutModalOpen] = useState(false);
-  const [checkoutResult, setCheckoutResult] = useState<any | null>(null); // APIからのレスポンスを保持
+  const [checkoutResult, setCheckoutResult] = useState<CheckoutResultType | null>(null); // anyをCheckoutResultTypeに修正
 
   const handleOpenScanner = () => {
     setScannedProduct(null); // スキャナを開くときに前回の情報をクリア
@@ -52,11 +62,10 @@ export default function HomePage() {
 
   const handleCheckout = async () => {
     const result = await checkout();
-    setCheckoutResult(result); // APIレスポンスを保存
+    setCheckoutResult(result);
     setIsCheckoutModalOpen(true);
-    if (result.success) {
-      // clearCart(); // checkoutフック内で行うか、ここでUI起因で行うか選択
-    }
+    // if (result.success) { // 成功時の処理はモーダル側で行うか検討
+    // }
   };
 
   const handleCloseCheckoutModal = () => {
