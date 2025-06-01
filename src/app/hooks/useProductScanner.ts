@@ -197,21 +197,18 @@ const useProductScanner = (
 
     if (drawingCtx && drawingCanvas) {
         drawingCtx.clearRect(0, 0, parseInt(drawingCanvas.getAttribute("width") || "640"), parseInt(drawingCanvas.getAttribute("height") || "480"));
-        if (result) {
-            if (result.boxes) {
-                // QuaggaResultのboxesプロパティの型をQuaggaの型定義に合わせる
-                // (box: QuaggaResult['boxes'][number]) のような形になるか、Quagga.ImageDebug.drawPathが期待する型に合わせる
-                result.boxes.filter((box: any) => box !== result.box) // 一旦anyで回避し、後ほど修正
-                            .forEach((box: any) => { // 一旦anyで回避し、後ほど修正
-                    Quagga.ImageDebug.drawPath(box, { x: 0, y: 1 }, drawingCtx, { color: "green", lineWidth: 2 });
-                });
-            }
-            if (result.box) {
-                 // QuaggaResultのboxプロパティの型をQuaggaの型定義に合わせる
-                Quagga.ImageDebug.drawPath(result.box, { x: 0, y: 1 }, drawingCtx, { color: "#00F", lineWidth: 2 });
-            }
+        if (result && result.boxes) { // result と result.boxes の存在を確認
+            // result.boxes が存在する場合、その要素 (box) の型を number[][] と仮定
+            result.boxes.filter((box: number[][]) => box !== result.box) // any を number[][] に変更
+                        .forEach((box: number[][]) => { // any を number[][] に変更
+                Quagga.ImageDebug.drawPath(box, { x: 0, y: 1 }, drawingCtx, { color: "green", lineWidth: 2 });
+            });
         }
-    } 
+        if (result && result.box) { // result と result.box の存在を確認
+            // result.box の型を number[][] と仮定
+            Quagga.ImageDebug.drawPath(result.box, { x: 0, y: 1 }, drawingCtx, { color: "#00F", lineWidth: 2 });
+        }
+    }
   }, []);
 
   useEffect(() => {
