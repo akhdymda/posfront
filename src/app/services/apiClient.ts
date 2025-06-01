@@ -2,9 +2,10 @@ import axios from 'axios';
 
 // APIのベースURLを取得し、末尾のスラッシュを正規化する関数
 const getBaseUrl = () => {
-  // 本番環境（Azure）では直接APIパスを使用
+  // 本番環境（Azure）では正しいバックエンドURLを直接指定
   if (typeof window !== 'undefined' && window.location.hostname.includes('azurewebsites.net')) {
-    return '/api';
+    // フロントエンドは app-step4-27.azurewebsites.net、バックエンドは app-step4-28.azurewebsites.net
+    return 'https://app-step4-28.azurewebsites.net/api';
   }
   
   // 開発環境では環境変数を使用
@@ -22,6 +23,8 @@ const apiClient = axios.create({
   headers: {
     'Content-Type': 'application/json',
   },
+  // CORSを有効にする
+  withCredentials: false
 });
 
 // パスの正規化を行う関数
