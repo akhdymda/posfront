@@ -75,7 +75,7 @@ const useShoppingCart = (): UseShoppingCart => {
       };
 
       // 購入APIのエンドポイントとリクエストボディを修正
-      const response = await apiClient.post<TransactionResponse>('api/transactions', requestBody);
+      const response = await apiClient.post<TransactionResponse>('transactions', requestBody);
 
       if (response.data && response.data.success) {
         console.log('Checkout successful:', response.data);
