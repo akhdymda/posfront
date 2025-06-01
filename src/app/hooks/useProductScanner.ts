@@ -1,18 +1,20 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import Quagga from '@ericblade/quagga2';
+import Quagga, { QuaggaJSResultObject as QuaggaResult } from '@ericblade/quagga2';
 import apiClient from '../services/apiClient';
 import { Product } from '../types/product';
 
 // Quaggaの型定義 (部分的な定義、必要に応じて拡張)
+/*
 interface QuaggaJSResultObject {
   codeResult: {
     code: string | null;
-    [key: string]: any; // 他にもプロパティが存在する可能性があるため
+    [key: string]: unknown; // anyからunknownへ
   };
-  box?: number[][];
-  boxes?: number[][][];
-  [key: string]: any; // 他のプロパティ
+  box?: number[][]; //  単一の検出ボックスの座標 (例: [[x1,y1],[x2,y2],[x3,y3],[x4,y4]])
+  boxes?: number[][][]; // 複数の検出ボックスの配列
+  [key: string]: unknown; // anyからunknownへ
 }
+*/
 
 interface QuaggaJSConfig {
   inputStream: {
@@ -33,7 +35,9 @@ interface QuaggaJSConfig {
   };
   numOfWorkers: number;
   decoder: {
-    readers: (string | { format: string, config: Record<string, any> })[];
+    // readers の型をより具体的に、またはQuaggaが期待する型に合わせる
+    // 例: 'ean_reader' や { format: 'ean_reader', config: { supplements: ['ean_5_supplement'] } } など
+    readers: (string | { format: string, config: Record<string, unknown> })[]; // anyからunknownへ
   };
   locate: boolean;
   frequency: number;
@@ -74,9 +78,8 @@ const useProductScanner = (
 
   // Ref-based callbacks to avoid circular dependencies and stale closures
   const fetchProductInfoRef = useRef<((janCode: string) => Promise<void>) | null>(null);
-  // QuaggaJSResultObject を使用
-  const handleDetectedCallbackRef = useRef<((data: QuaggaJSResultObject) => void) | null>(null);
-  const handleProcessedCallbackRef = useRef<((result: QuaggaJSResultObject) => void) | null>(null);
+  const handleDetectedCallbackRef = useRef<((data: QuaggaResult) => void) | null>(null);
+  const handleProcessedCallbackRef = useRef<((result: QuaggaResult) => void) | null>(null);
   const initializeQuaggaRef = useRef<(() => void) | null>(null);
   const internalStopScanRef = useRef<(() => void) | null>(null);
 
@@ -157,46 +160,54 @@ const useProductScanner = (
     fetchProductInfoRef.current = internalFetchProductInfo;
   }, [internalFetchProductInfo]);
 
-  // QuaggaJSResultObject を使用
-  const internalHandleDetected = useCallback((data: QuaggaJSResultObject) => {
+  const internalHandleDetected = useCallback((data: QuaggaResult) => {
     if (!isQuaggaInitializedRef.current) {
         console.log(`[ScannerHook] handleDetected: Quagga not initialized. Ignoring.`);
         return;
     }
     if (data && data.codeResult && typeof data.codeResult.code === 'string') {
       const detectedCode = data.codeResult.code.trim();
-      if (lastDetectedCodeRef.current === detectedCode) return;
+      if (lastDetectedCodeRef.current === detectedCode && detectedCode !== '') {
+        console.log(`[ScannerHook] Code ${detectedCode} already processed, skipping.`);
+        return;
+      }
       console.log(`[ScannerHook] QuaggaJS detected a code: '${detectedCode}'`);
       lastDetectedCodeRef.current = detectedCode;
       if (detectedCode !== '' && fetchProductInfoRef.current) {
         fetchProductInfoRef.current(detectedCode);
       } else if (detectedCode === ''){
         console.warn("[ScannerHook] Detected code is an empty string after trim.");
-        lastDetectedCodeRef.current = null;
+        // Optionally reset lastDetectedCodeRef if empty strings should allow re-detection of same actual code later
+        // lastDetectedCodeRef.current = null; 
       }
     } else {
+      // dataやdata.codeResultがnullの場合やcodeがstringでない場合のログ
       console.warn("[ScannerHook] Quagga.onDetected called but no valid code string found in data:", data);
+      // lastDetectedCodeRef.current = null; // 無効な検出の場合、リセットするかは検討事項
     }
-  }, [lastDetectedCodeRef]); // fetchProductInfoRef は ref なので依存配列から削除可能
+  }, [lastDetectedCodeRef]); 
 
   useEffect(() => {
     handleDetectedCallbackRef.current = internalHandleDetected;
   }, [internalHandleDetected]);
 
-  // QuaggaJSResultObject を使用
-  const internalHandleProcessed = useCallback((result: QuaggaJSResultObject) => {
+  const internalHandleProcessed = useCallback((result: QuaggaResult) => {
     const drawingCtx = Quagga.canvas.ctx.overlay;
     const drawingCanvas = Quagga.canvas.dom.overlay;
+
     if (drawingCtx && drawingCanvas) {
         drawingCtx.clearRect(0, 0, parseInt(drawingCanvas.getAttribute("width") || "640"), parseInt(drawingCanvas.getAttribute("height") || "480"));
         if (result) {
             if (result.boxes) {
-                // box の型を QuaggaJSResultObject['box'] もしくは適切な型に
-                result.boxes.filter((box: any) => box !== result.box).forEach((box: any) => {
+                // QuaggaResultのboxesプロパティの型をQuaggaの型定義に合わせる
+                // (box: QuaggaResult['boxes'][number]) のような形になるか、Quagga.ImageDebug.drawPathが期待する型に合わせる
+                result.boxes.filter((box: any) => box !== result.box) // 一旦anyで回避し、後ほど修正
+                            .forEach((box: any) => { // 一旦anyで回避し、後ほど修正
                     Quagga.ImageDebug.drawPath(box, { x: 0, y: 1 }, drawingCtx, { color: "green", lineWidth: 2 });
                 });
             }
             if (result.box) {
+                 // QuaggaResultのboxプロパティの型をQuaggaの型定義に合わせる
                 Quagga.ImageDebug.drawPath(result.box, { x: 0, y: 1 }, drawingCtx, { color: "#00F", lineWidth: 2 });
             }
         }
@@ -283,7 +294,7 @@ const useProductScanner = (
         if (Quagga && typeof Quagga.stop === 'function') Quagga.stop();
       }
     });
-  }, [videoRef, streamRef, onScanErrorCallback, setIsScanning, setError]); // handleDetectedCallbackRef, handleProcessedCallbackRef は ref なので依存配列から削除可能
+  }, [videoRef, streamRef, onScanErrorCallback, setIsScanning, setError]);
 
   useEffect(() => {
     initializeQuaggaRef.current = internalInitializeQuagga;
